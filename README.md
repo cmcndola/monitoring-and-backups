@@ -2,6 +2,38 @@
 
 A secure installation script that sets up Netdata monitoring with automatic HTTPS, secure authentication, and specific monitoring for Moodle and Koha applications.
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+  - [1. DNS Setup (Cloudflare Example)](#1-dns-setup-cloudflare-example)
+  - [2. Installation](#2-installation)
+  - [3. During Installation](#3-during-installation)
+  - [4. Access Your Dashboard](#4-access-your-dashboard)
+- [What's Monitored](#whats-monitored)
+  - [System Metrics](#system-metrics)
+  - [Application-Specific](#application-specific)
+  - [Custom Alarms](#custom-alarms)
+- [Command-Line Tools](#command-line-tools)
+  - [Quick Resource Check](#quick-resource-check)
+- [Scaling Guidelines](#scaling-guidelines)
+  - [When to Scale](#when-to-scale)
+- [Troubleshooting](#troubleshooting)
+  - [Can't Access Dashboard](#cant-access-dashboard)
+  - [Reset Credentials](#reset-credentials)
+- [Security Notes](#security-notes)
+- [Files and Locations](#files-and-locations)
+- [Maintenance](#maintenance)
+  - [Update Netdata](#update-netdata)
+  - [Modify Alarms](#modify-alarms)
+  - [Change Credentials](#change-credentials)
+- [Additional Resources](#additional-resources)
+- [Support](#support)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Features
 
 - 🔐 **Secure by Default**: Generates random usernames and strong passwords
