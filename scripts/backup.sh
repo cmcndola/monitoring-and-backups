@@ -56,13 +56,15 @@ MONTHLY_RETENTION=6  # Keep 6 monthly backups (1st of month)
 trap 'handle_error $? $LINENO' ERR
 
 handle_error() {
-    local exit_code=$1
-    local line_number=$2
-    local error_msg="Unexpected error at line $line_number (exit code: $exit_code)"
-    
+    local exit_code
+    exit_code="$1"
+    local line_number
+    line_number="$2"
+    local error_msg
+    error_msg="Unexpected error at line $line_number (exit code: $exit_code)"
     error "$error_msg"
     ping_healthcheck "/fail" "$(format_healthcheck_error "$error_msg")"
-    exit $exit_code
+    exit "$exit_code"
 }
 
 # Function to ping healthchecks.io
@@ -85,8 +87,10 @@ ping_healthcheck() {
 
 # Function to format error for healthchecks
 format_healthcheck_error() {
-    local error_msg="$1"
-    local log_tail=$(tail -n 20 "$LOG_FILE" 2>/dev/null || echo "No log available")
+    local error_msg
+    error_msg="$1"
+    local log_tail
+    log_tail=$(tail -n 20 "$LOG_FILE" 2>/dev/null || echo "No log available")
     
     cat << EOF
 Backup Failed: $(hostname)
@@ -107,6 +111,7 @@ EOF
 load_db_credentials() {
     if [ -f "$SITES_DIRECTORY/config/database-credentials.txt" ]; then
         DB_ROOT_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "MariaDB Root" -A1 | tail -1 | awk '{print $2}')
+        # MOODLE_DB_PASSWORD appears unused, consider removing or exporting if needed
         MOODLE_DB_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "Moodle Database" -A1 | tail -1 | awk '{print $2}')
         return 0
     else
@@ -126,8 +131,10 @@ setup_directories() {
 
 # Function to check available disk space
 check_disk_space() {
-    local required_space=$1  # in MB
-    local available_space=$(df "$BACKUP_DIR" | awk 'NR==2 {print int($4/1024)}')
+    local required_space
+    required_space="$1"  # in MB
+    local available_space
+    available_space=$(df "$BACKUP_DIR" | awk 'NR==2 {print int($4/1024)}')
     
     if [ "$available_space" -lt "$required_space" ]; then
         error "Insufficient disk space. Required: ${required_space}MB, Available: ${available_space}MB"
@@ -308,7 +315,7 @@ create_metadata() {
     "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
     "hostname": "$(hostname)",
     "server_ip": "$(curl -s ifconfig.me 2>/dev/null || echo 'unknown')",
-    "backup_type": "$([ "$DAY_OF_WEEK" = "7" ] && echo "weekly" || ([ "$(date +%d)" = "01" ] && echo "monthly" || echo "daily"))",
+    "backup_type": "$(if [ "$DAY_OF_WEEK" = "7" ]; then echo "weekly"; elif [ "$(date +%d)" = "01" ]; then echo "monthly"; else echo "daily"; fi)",
     "backup_version": "1.0",
     "components": {
         "moodle_db": {
@@ -362,10 +369,10 @@ upload_to_b2() {
     log "Creating backup archive..."
     cd "$BACKUP_DIR"
     tar -czf "backup-$backup_type-$DATE.tar.gz" \
-        databases/*-$DATE.* \
-        files/*-$DATE.* \
-        config/*-$DATE.* \
-        backup-metadata-$DATE.json
+        "databases"/*-"$DATE".* \
+        "files"/*-"$DATE".* \
+        "config"/*-"$DATE".* \
+        "backup-metadata-$DATE.json"
     
     # Upload to B2 with progress
     log "Uploading to B2..."
@@ -432,9 +439,8 @@ send_notification() {
     
     # Example: Send to a log file that can be monitored
     echo "[$status] $message" >> "$LOG_DIR/backup-status.log"
-    
     # Create timestamp file for monitoring
-    echo "$(date +%s)" > /var/run/last_backup_timestamp
+    date +%s > /var/run/last_backup_timestamp
     
     # You could add email, Slack, or other notifications here
 }
@@ -486,7 +492,7 @@ setup_healthchecks() {
     echo "   - Weekly backup check (grace: 6 hours)"
     echo "   - Monthly backup check (grace: 12 hours)"
     echo
-    read -p "Press Enter to continue..."
+    read -r -p "Press Enter to continue..."
 }
 
 # Parse command line arguments

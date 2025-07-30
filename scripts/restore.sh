@@ -101,6 +101,7 @@ setup_directories() {
 load_db_credentials() {
     if [ -f "$SITES_DIRECTORY/config/database-credentials.txt" ]; then
         DB_ROOT_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "MariaDB Root" -A1 | tail -1 | awk '{print $2}')
+        # MOODLE_DB_PASSWORD appears unused, consider removing or exporting if needed
         MOODLE_DB_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "Moodle Database" -A1 | tail -1 | awk '{print $2}')
     else
         error "Database credentials file not found!"
@@ -121,30 +122,30 @@ list_backups() {
 
 # Find latest backup of specific type
 find_latest_backup() {
-    local backup_type="$1"
-    local latest=$(rclone ls "$B2_REMOTE/$B2_PATH/$backup_type/" 2>/dev/null | grep -E "backup-$backup_type-.*\.tar\.gz$" | sort -r | head -1 | awk '{print $2}')
-    
+    local backup_type
+    backup_type="$1"
+    local latest
+    latest=$(rclone ls "$B2_REMOTE/$B2_PATH/$backup_type/" 2>/dev/null | grep -E "backup-$backup_type-.*\.tar\.gz$" | sort -r | head -1 | awk '{print $2}')
     if [ -z "$latest" ]; then
         error "No $backup_type backups found!"
     fi
-    
     echo "$latest"
 }
 
 # Find backup by date
 find_backup_by_date() {
-    local date_pattern="$1"
+    local date_pattern
+    date_pattern="$1"
     local found_backups=()
-    
     for type in daily weekly monthly; do
-        local backups=$(rclone ls "$B2_REMOTE/$B2_PATH/$type/" 2>/dev/null | grep -E "backup-$type-.*$date_pattern.*\.tar\.gz$" | awk '{print $2}')
+        local backups
+        backups=$(rclone ls "$B2_REMOTE/$B2_PATH/$type/" 2>/dev/null | grep -E "backup-$type-.*$date_pattern.*\.tar\.gz$" | awk '{print $2}')
         if [ -n "$backups" ]; then
             while IFS= read -r backup; do
                 found_backups+=("$type/$backup")
             done <<< "$backups"
         fi
     done
-    
     if [ ${#found_backups[@]} -eq 0 ]; then
         error "No backups found for date: $date_pattern"
     elif [ ${#found_backups[@]} -eq 1 ]; then
@@ -163,6 +164,7 @@ pre_restore_checks() {
     log "Performing pre-restore checks..."
     
     # Check if services are running
+    # services_running appears unused, consider removing or exporting if needed
     local services_running=true
     for service in apache2 php8.3-fpm mariadb; do
         if systemctl is-active --quiet $service; then
@@ -173,7 +175,8 @@ pre_restore_checks() {
     done
     
     # Check disk space
-    local available_space=$(df "$RESTORE_DIR" | awk 'NR==2 {print int($4/1024/1024)}')
+    local available_space
+    available_space=$(df "$RESTORE_DIR" | awk 'NR==2 {print int($4/1024/1024)}')
     if [ "$available_space" -lt 10 ]; then
         error "Insufficient disk space. Need at least 10GB, have ${available_space}GB"
     fi
@@ -183,7 +186,7 @@ pre_restore_checks() {
     echo -e "${RED}⚠️  WARNING: This will restore your Moodle and Koha data!${NC}"
     echo -e "${RED}⚠️  Current data will be backed up but may be overwritten.${NC}"
     echo
-    read -p "Are you sure you want to continue? Type 'yes' to proceed: " confirm
+    read -r -p "Are you sure you want to continue? Type 'yes' to proceed: " confirm
     
     if [ "$confirm" != "yes" ]; then
         log "Restore cancelled by user"
@@ -195,7 +198,8 @@ pre_restore_checks() {
 create_emergency_backup() {
     log "Creating emergency backup of current state..."
     
-    local emergency_dir="/var/backups/emergency/$(date +%Y%m%d-%H%M%S)"
+    local emergency_dir
+    emergency_dir="/var/backups/emergency/$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$emergency_dir"
     
     # Quick database dumps
@@ -218,7 +222,8 @@ create_emergency_backup() {
 # Download backup from B2
 download_backup() {
     local backup_path="$1"
-    local backup_file=$(basename "$backup_path")
+    local backup_file
+    backup_file=$(basename "$backup_path")
     
     log "Downloading backup: $backup_file"
     
@@ -294,7 +299,8 @@ start_services() {
 restore_moodle_database() {
     log "Restoring Moodle database..."
     
-    local moodle_backup=$(ls "$RESTORE_DIR"/databases/moodle-*.sql.gz 2>/dev/null | head -1)
+    local moodle_backup
+    moodle_backup=$(find "$RESTORE_DIR/databases" -maxdepth 1 -name "moodle-*.sql.gz" | head -1)
     
     if [ -z "$moodle_backup" ]; then
         error "Moodle database backup not found!"
@@ -319,35 +325,34 @@ restore_koha_database() {
     log "Restoring Koha database..."
     
     # Check for koha-dump format first
-    local koha_tarball=$(ls "$RESTORE_DIR"/databases/koha-*.tar.gz 2>/dev/null | head -1)
-    local koha_sqlgz=$(ls "$RESTORE_DIR"/databases/koha-*.sql.gz 2>/dev/null | head -1)
+    local koha_tarball
+    koha_tarball=$(find "$RESTORE_DIR/databases" -maxdepth 1 -name "koha-*.tar.gz" | head -1)
+    local koha_sqlgz
+    koha_sqlgz=$(find "$RESTORE_DIR/databases" -maxdepth 1 -name "koha-*.sql.gz" | head -1)
     
     if [ -n "$koha_tarball" ]; then
         log "Found Koha tarball backup"
         
         # Extract koha-dump tarball
-        local temp_dir="/tmp/koha-restore-$$"
+        local temp_dir
+        temp_dir="/tmp/koha-restore-$$"
         mkdir -p "$temp_dir"
         tar -xzf "$koha_tarball" -C "$temp_dir"
-        
         # Find the SQL file inside
-        local sql_file=$(find "$temp_dir" -name "*.sql.gz" -o -name "*.sql" | head -1)
-        
+        local sql_file
+        sql_file=$(find "$temp_dir" -name "*.sql.gz" -o -name "*.sql" | head -1)
         if [ -z "$sql_file" ]; then
             error "No SQL file found in Koha backup!"
         fi
-        
         # Drop and restore
         koha-remove library --keep-mysql || warn "koha-remove failed"
         koha-create --create-db library || warn "koha-create failed"
-        
         # Restore the database
         if [[ "$sql_file" == *.gz ]]; then
             gunzip -c "$sql_file" | koha-mysql library
         else
             koha-mysql library < "$sql_file"
         fi
-        
         rm -rf "$temp_dir"
         
     elif [ -n "$koha_sqlgz" ]; then
@@ -371,7 +376,8 @@ EOF
 restore_moodle_files() {
     log "Restoring Moodle data files..."
     
-    local moodledata_backup=$(ls "$RESTORE_DIR"/files/moodledata-*.tar.gz 2>/dev/null | head -1)
+    local moodledata_backup
+    moodledata_backup=$(find "$RESTORE_DIR/files" -maxdepth 1 -name "moodledata-*.tar.gz" | head -1)
     
     if [ -z "$moodledata_backup" ]; then
         warn "Moodle data files backup not found, skipping..."
@@ -396,7 +402,8 @@ restore_moodle_files() {
 
 # Restore configuration files (optional)
 restore_configs() {
-    local config_backup=$(ls "$RESTORE_DIR"/config/configs-*.tar.gz 2>/dev/null | head -1)
+    local config_backup
+    config_backup=$(find "$RESTORE_DIR/config" -maxdepth 1 -name "configs-*.tar.gz" | head -1)
     
     if [ -z "$config_backup" ]; then
         log "No configuration backup found, skipping..."
@@ -404,13 +411,14 @@ restore_configs() {
     fi
     
     echo
-    read -p "Do you want to restore configuration files? (y/N): " restore_conf
+    read -r -p "Do you want to restore configuration files? (y/N): " restore_conf
     
     if [[ "$restore_conf" =~ ^[Yy]$ ]]; then
         log "Restoring configuration files..."
         
         # Create backup of current configs
-        local conf_backup_dir="/var/backups/configs-pre-restore-$(date +%Y%m%d-%H%M%S)"
+        local conf_backup_dir
+        conf_backup_dir="/var/backups/configs-pre-restore-$(date +%Y%m%d-%H%M%S)"
         mkdir -p "$conf_backup_dir"
         
         # Backup current configs
@@ -538,8 +546,8 @@ main() {
         "interactive")
             list_backups
             echo
-            read -p "Enter backup type (daily/weekly/monthly): " backup_type
-            read -p "Enter backup date (YYYYMMDD) or 'latest': " backup_date
+            read -r -p "Enter backup type (daily/weekly/monthly): " backup_type
+            read -r -p "Enter backup date (YYYYMMDD) or 'latest': " backup_date
             
             if [ "$backup_date" = "latest" ]; then
                 BACKUP_FILE=$(find_latest_backup "$backup_type")
