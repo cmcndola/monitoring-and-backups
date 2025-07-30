@@ -13,7 +13,20 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Logging functions
+# Configuration
+BACKUP_NAME="moodle-koha-$(hostname)"
+DATE=$(date +%Y%m%d-%H%M%S)
+DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
+BACKUP_DIR="/var/backups/daily"
+LOG_DIR="/var/log/backups"
+LOG_FILE="$LOG_DIR/backup-$DATE.log"
+SITES_DIRECTORY="${SITES_DIRECTORY:-/var/www}"
+START_TIME=$(date +%s)
+
+# Create log directory first
+mkdir -p "$LOG_DIR"
+
+# Logging functions (now safe to use LOG_FILE)
 log() {
     echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
 }
@@ -29,16 +42,6 @@ warn() {
 info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
 }
-
-# Configuration
-BACKUP_NAME="moodle-koha-$(hostname)"
-DATE=$(date +%Y%m%d-%H%M%S)
-DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
-BACKUP_DIR="/var/backups/daily"
-LOG_DIR="/var/log/backups"
-LOG_FILE="$LOG_DIR/backup-$DATE.log"
-SITES_DIRECTORY="${SITES_DIRECTORY:-/var/www}"
-START_TIME=$(date +%s)
 
 # B2 Configuration
 B2_REMOTE="b2:your-bucket-name"  # Change this to your B2 remote name
@@ -110,12 +113,24 @@ EOF
 # Database credentials (loaded from secure storage)
 load_db_credentials() {
     if [ -f "$SITES_DIRECTORY/config/database-credentials.txt" ]; then
-        DB_ROOT_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "MariaDB Root" -A1 | tail -1 | awk '{print $2}')
-        # MOODLE_DB_PASSWORD appears unused, consider removing or exporting if needed
-        MOODLE_DB_PASSWORD=$(grep "Password:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "Moodle Database" -A1 | tail -1 | awk '{print $2}')
+        # Extract MariaDB root password (look for "MariaDB Root:" then find the next "Password:" line)
+        DB_ROOT_PASSWORD=$(grep -A3 "MariaDB Root:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "Password:" | head -1 | sed 's/Password: //')
+        
+        # Extract Moodle database password (look for "Moodle Database:" then find the next "Password:" line)
+        MOODLE_DB_PASSWORD=$(grep -A3 "Moodle Database:" "$SITES_DIRECTORY/config/database-credentials.txt" | grep "Password:" | head -1 | sed 's/Password: //')
+        
+        # Debug output (remove in production)
+        log "Loaded DB credentials successfully"
+        
+        # Verify we got the password
+        if [ -z "$DB_ROOT_PASSWORD" ]; then
+            error "Failed to extract MariaDB root password from credentials file"
+            return 1
+        fi
+        
         return 0
     else
-        error "Database credentials file not found!"
+        error "Database credentials file not found at: $SITES_DIRECTORY/config/database-credentials.txt"
         return 1
     fi
 }
@@ -123,7 +138,7 @@ load_db_credentials() {
 # Create necessary directories
 setup_directories() {
     mkdir -p "$BACKUP_DIR"
-    mkdir -p "$LOG_DIR"
+    mkdir -p "$LOG_DIR"  # This is now redundant but kept for consistency
     mkdir -p "$BACKUP_DIR/databases"
     mkdir -p "$BACKUP_DIR/files"
     mkdir -p "$BACKUP_DIR/config"
@@ -455,6 +470,7 @@ Usage: $0 [OPTIONS]
 Options:
     --help                Show this help message
     --setup-healthchecks  Guide for setting up healthchecks.io
+    --test-credentials    Test database credentials loading
 
 Configuration:
     Edit this script to set:
@@ -495,8 +511,43 @@ setup_healthchecks() {
     read -r -p "Press Enter to continue..."
 }
 
+# Test credentials loading
+test_credentials() {
+    echo "=== Testing Database Credentials Loading ==="
+    echo
+    
+    setup_directories
+    
+    if load_db_credentials; then
+        echo "✓ Credentials loaded successfully"
+        echo "MariaDB root password length: ${#DB_ROOT_PASSWORD} characters"
+        echo "Moodle DB password length: ${#MOODLE_DB_PASSWORD} characters"
+        echo
+        echo "Testing MariaDB connection..."
+        if mysql -u root -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            echo "✓ MariaDB connection successful"
+        else
+            echo "✗ MariaDB connection failed"
+            echo "This means the password extraction isn't working correctly"
+        fi
+    else
+        echo "✗ Failed to load credentials"
+        echo
+        echo "Contents of credentials file:"
+        if [ -f "$SITES_DIRECTORY/config/database-credentials.txt" ]; then
+            cat "$SITES_DIRECTORY/config/database-credentials.txt"
+        else
+            echo "Credentials file not found at: $SITES_DIRECTORY/config/database-credentials.txt"
+        fi
+    fi
+}
+
 # Parse command line arguments
 case "$1" in
+    --test-credentials)
+        test_credentials
+        exit 0
+        ;;
     --help)
         show_help
         exit 0
