@@ -154,7 +154,7 @@ if [ -f /var/www/config/database-credentials.txt ]; then
 fi
 
 if [ -n "$DB_ROOT_PASSWORD" ]; then
-    mysql -u root -p${DB_ROOT_PASSWORD} << 'EOF' 2>/dev/null || true
+    mysql -u root -p"${DB_ROOT_PASSWORD}" << 'EOF' 2>/dev/null || true
 CREATE USER IF NOT EXISTS 'netdata'@'localhost';
 GRANT USAGE, REPLICATION CLIENT, PROCESS ON *.* TO 'netdata'@'localhost';
 FLUSH PRIVILEGES;
@@ -204,7 +204,7 @@ log "Adding Netdata to Caddy configuration..."
 
 # Get the monitoring domain from user
 echo
-read -p "Enter domain for Netdata monitoring (e.g., monitor.example.com): " MONITOR_DOMAIN
+read -r -p "Enter domain for Netdata monitoring (e.g., monitor.example.com): " MONITOR_DOMAIN
 
 # Generate password hash for Caddy
 log "Generating password hash for Caddy basic auth..."
